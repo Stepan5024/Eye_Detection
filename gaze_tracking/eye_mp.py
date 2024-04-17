@@ -4,16 +4,16 @@ import cv2
 from .pupil import Pupil
 
 
-class Eye(object):
+class EyeMP(object):
     """
    Этот класс создает новую рамку для выделения глаза и
 инициирует обнаружение зрачка.
     """
-# Индексы точек лица, соответствующих левому и правому глазу в landmarks.
-    LEFT_EYE_POINTS = [36, 37, 38, 39, 40, 41]
-    RIGHT_EYE_POINTS = [42, 43, 44, 45, 46, 47]
+    # Индексы ключевых точек для левого и правого глаз по документации Mediapipe
+    LEFT_EYE_INDICES = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
+    RIGHT_EYE_INDICES = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
 
-    def __init__(self, original_frame, landmarks, side, calibration):
+    def __init__(self, original_frame, landmarks_mp, side, calibration):
         """Инициализирует объект Eye
 
         Аргументы:
@@ -28,21 +28,26 @@ class Eye(object):
         self.pupil = None # Объект, представляющий зрачок.
         self.landmark_points = None # Точки landmarks, определяющие глаз.
         # Вызывает метод _analyze для обработки и анализа глаза.
-        self._analyze(original_frame, landmarks, side, calibration)
+        self._analyze(original_frame, landmarks_mp, side, calibration)
 
     @staticmethod
-    def _middle_point(p1, p2):
-        """Возвращает среднюю точку (x,y) между двумя точками
+    def _middle_point(point1, point2):
+        """Вычисляет среднюю точку между двумя точками."""
+        x = (point1.x + point2.x) / 2
+        y = (point1.y + point2.y) / 2
+        return (x, y)
+    """def _middle_point(p1, p2):
+        Возвращает среднюю точку (x,y) между двумя точками
 
         Аргументы:
             p1 (dlib.point): Первая точка
             p2 (dlib.point): Вторая точка
-        """
+    
         x = int((p1.x + p2.x) / 2)
         y = int((p1.y + p2.y) / 2)
-        return (x, y)
+        return (x, y)"""
 
-    def _isolate(self, frame, landmarks, points):
+    def _isolate(self, frame, landmarks_mp, points):
         """Выделите глаз, чтобы получилась рамка без другой части лица.
 
          Аргументы:
@@ -52,7 +57,7 @@ class Eye(object):
         """
          # Создание массива точек для области лица на основе переданных ориентиров.
     
-        region = np.array([(landmarks.part(point).x, landmarks.part(point).y) for point in points])
+        region = np.array([(landmarks_mp[point].x, landmarks_mp[point].y) for point in points])
         region = region.astype(np.int32)
         self.landmark_points = region
 
@@ -76,7 +81,7 @@ class Eye(object):
         height, width = self.frame.shape[:2]
         self.center = (width / 2, height / 2)
 
-    def _blinking_ratio(self, landmarks, points):
+    def _blinking_ratio(self, landmarks_mp, points):
         """Вычисляет соотношение, которое может указывать, закрыт глаз или нет.
         Это деление ширины глаза на его высоту.
 
@@ -87,12 +92,12 @@ class Eye(object):
         Возвращаемые значения:
         float or None: Вычисленное соотношение. Возвращает None, если произошло деление на ноль.
         """
-         # Получение координат углов глаза и средних точек верхней и нижней части глаза.
+        # Получение координат углов глаза и средних точек верхней и нижней части глаза.
     
-        left = (landmarks.part(points[0]).x, landmarks.part(points[0]).y)
-        right = (landmarks.part(points[3]).x, landmarks.part(points[3]).y)
-        top = self._middle_point(landmarks.part(points[1]), landmarks.part(points[2]))
-        bottom = self._middle_point(landmarks.part(points[5]), landmarks.part(points[4]))
+        left = (landmarks_mp[points[0]].x, landmarks_mp[points[0]].y)
+        right = (landmarks_mp[points[3]].x, landmarks_mp[points[3]].y)
+        top = self._middle_point(landmarks_mp[points[1]], landmarks_mp[points[2]])
+        bottom = self._middle_point(landmarks_mp[points[5]], landmarks_mp[points[4]])
         # Вычисление ширины и высоты глаза с использованием теоремы Пифагора.
     
         eye_width = math.hypot((left[0] - right[0]), (left[1] - right[1]))
@@ -107,7 +112,7 @@ class Eye(object):
 
         return ratio
 
-    def _analyze(self, original_frame, landmarks, side, calibration):
+    def _analyze(self, original_frame, landmarks_mp, side, calibration):
         """Обнаруживает и выделяет глаз в новом кадре, отправляет данные на калибровку
         и инициализирует объект зрачка.
 
@@ -119,14 +124,15 @@ class Eye(object):
         """
          # Определение точек зрения в зависимости от стороны глаза.
         if side == 0:
-            points = self.LEFT_EYE_POINTS
+            points = self.LEFT_EYE_INDICES
         elif side == 1:
-            points = self.RIGHT_EYE_POINTS
+            points = self.RIGHT_EYE_INDICES
         else:
             return
- # Вычисление соотношения моргания и выделение области глаза.   
-        self.blinking = self._blinking_ratio(landmarks, points)
-        self._isolate(original_frame, landmarks, points)
+        # Вычисление соотношения моргания и выделение области глаза.  
+        #print(f"landmarks {landmarks_mp}")
+        self.blinking = self._blinking_ratio(landmarks_mp, points)
+        self._isolate(original_frame, landmarks_mp, points)
   # Если калибровка не завершена, оценка данных для калибровки.
         if not calibration.is_complete():
             calibration.evaluate(self.frame, side)
